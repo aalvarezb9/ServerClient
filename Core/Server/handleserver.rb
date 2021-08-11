@@ -1,6 +1,6 @@
 require 'json'
 require 'digest'
-require './Core/Server/server'
+require './Core/Client/cliente'
 
 class HandleServer
     def initialize
@@ -29,12 +29,18 @@ class HandleServer
             else
                 if @option == "1"
                     puts "---INICIAR SESIÓN---"
-                else
+                    screenName()
+                    password()
+                    exe()
+                elsif @option == "2"
                     puts "---REGISTRARSE---"
+                    screenName()
+                    password()
+                    exe()
+                else
+                    puts "Ingrese una opción correcta"
                 end
-                screenName()
-                password()
-                exe()
+                
             end
         end
     end
@@ -128,12 +134,13 @@ class HandleServer
 
     def putOnline(srv)
         data = getJson(@onlineLocation)
-        data.push({"srv" => srv})
+        dt = {"srv" => srv, "token" => Digest::SHA1.hexdigest([Time.now, rand].join)}
+        data.push(dt)
         File.open("./data/online.json", "w") do |f|
             f.write(JSON.pretty_generate(data))
         end
 
-        Server.new(2000).conectar
+        Cliente.new('localhost', 2000, dt["srv"]).iniciar
     end
 
     def delOnline
@@ -141,6 +148,20 @@ class HandleServer
         data2 = []
         data.each do |server|
             if server["srv"] != @screenName
+                data2.push(server)
+            end
+        end
+
+        File.open("./data/online.json", "w") do |f|
+            f.write(JSON.pretty_generate(data2))
+        end
+    end
+
+    def delOnline2(token)
+        data = getJson(@onlineLocation)
+        data2 = []
+        data.each do |server|
+            if server["token"] != token
                 data2.push(server)
             end
         end
