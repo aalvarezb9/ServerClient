@@ -9,11 +9,6 @@ require 'socket'
 # print "Ingrese un puerto por el que desea hacer la conexión: "
 # port = gets.chomp
 
-
-
-
-
-
 class Cliente
     def initialize(hostname, port, user)
         @hostname = hostname

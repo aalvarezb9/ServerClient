@@ -9,7 +9,7 @@ class Server
         @sockets = []
         @online = []
         @time = getTiempoN() ####
-        
+        @semaphore = Mutex.new
         @server = abrirServidor()
         # conectar()
     end
@@ -71,6 +71,77 @@ class Server
         return arreglo[indice]
     end
 
+    def chat(emisor, receptor, client, usr)
+        socketEmisor = emisor["socket"]
+        userEmisor = emisor["user"]
+        socketReceptor = receptor["socket"]
+        userReceptor = receptor["user"]
+        msj = ''
+        msj1 = ''
+
+        puts("Chat iniciado entre #{userEmisor} y #{userReceptor}...")
+
+        
+        socketEmisor.puts("<=== Chat con '#{userReceptor}' ===>\n")
+        socketReceptor.puts("<=== Chat con '#{userEmisor}' ===>\n")
+        # @a = Thread.start {
+        loop {
+
+            puts("msj -> #{msj.chop}")
+            puts("msj1 -> #{msj1.chop}")
+
+            if msj.chop == "\\c" or msj1.chop == "\\c"
+                break           
+            end
+
+            @escucha1 = Thread.new {
+                
+                while msj = socketEmisor.gets do
+                    if msj.chop == "\\c"
+                        socketEmisor.puts("Ha finalizado el chat con #{userReceptor}...")
+                        socketEmisor.puts("Ha finalizado el chat con #{userReceptor}...")
+                        socketReceptor.puts("#{userEmisor} ha salido del chat...")
+                        break
+                    else
+                        socketReceptor.puts("#{userEmisor}: #{msj.chop}")
+                    end
+                end
+
+            }
+            
+            
+                
+            @escucha2 = Thread.new {
+
+                while msj1 = socketReceptor.gets do
+                    if msj1.chop == "\\c"
+                        socketEmisor.puts("#{userReceptor} ha salido del chat")
+                        break
+                    else
+                        socketEmisor.puts("#{userReceptor}: #{msj1.chop}")
+                    end
+                end
+
+            }
+
+            @escucha1.join
+            # @escucha2.join
+
+        }
+
+        @request = "-"
+        puts "fin 133"
+        Thread.kill(@escucha1)
+        @escucha1.join
+        puts "fin 137"
+        Thread.kill(@escucha2)
+        @escucha2.join
+        puts "fin 139"
+        escucharComandos(client, usr, 1) 
+        puts "fin 141"
+        
+    end
+
     def comandosDisponibles
         return "
             \\h: Muestra la ayuda de los comandos que están disponibles \n
@@ -82,6 +153,108 @@ class Server
             \\n: Muestra el tiempo en segundos en el que se envía la notificación de mensajes pendientes \n
             \\q: Cerrar sesión
         "
+    end
+
+    def escucharComandos(client, usr, var)
+        # Thread.kill(@escucha1)
+        # Thread.kill(@escucha2)
+        if var == 1
+            Thread.kill(@escucha1)
+            Thread.kill(@escucha2)
+        end
+        @request = "-"
+        ya = false
+        loop {
+            if ya
+                Thread.kill(@escucha)
+            end
+            @escucha = Thread.new {
+                while @request != "\\q" and @request = client.gets do # while true # @request != "\\q" and @request = client.gets
+                    @request = @request.chop #client.recv(512).chomp
+                    case @request
+                        when "\\h"
+                            client.puts(comandosDisponibles())
+                        when "\\u"
+                            # client.puts(usuariosEnLinea())
+                            users = usuariosEnLinea()
+                            if users.length == 0
+                                client.puts("No hay usuarios en línea")
+                            else
+                                # client.puts("Los usuarios en línea son: \n")
+                                users.each do |onl|
+                                    client.puts("- #{onl["srv"]}\n")
+                                end
+                            end
+                        when "\\n"
+                            client.puts("#{getTiempoN()}")
+                        when "\\p"
+                            client.puts("Se mostrarán los mensajes pendientes")
+                        when /^\\n\s+[0-9]+$/ # /^\\n\s[0-9]+$/
+                            nuevoTiempo = @request.split(/\s+/)[1] # @request.split(" ")[1]
+                            File.open("./data/configtime.json", "w") do |f|
+                                f.puts(JSON.pretty_generate({"time" => nuevoTiempo.to_i}))
+                            end
+                            setTiempoN()
+                            client.puts("Tiempo de espera actualizado a #{nuevoTiempo} segundos")
+                        when /^\\c\s+([a-zA-Z_\.]+[0-9]*?)+$/
+                            user = @request.split(/\s+/)[1]
+                            if user != usr["srv"]
+                                if isOnline(user)
+                                    receptor = @sockets[obtenerPos(@online, user)]
+                                    emisor = @sockets[obtenerPos(@online, usr["srv"])]
+                                    puts("#{usr["srv"]} quiere chatear con #{user}...")
+                                    ya = true
+                                    # c1 = Thread.new {
+                                        receptor.puts("Aceptas la invitación a chatear de #{usr["srv"]}?")
+                                    # receptor.puts("Presiona '\\c #{usr["srv"]}' para aceptar\nPresiona 2 para denegar")
+                                        receptor.puts("*Presiona 1 para aceptar\n*Presiona 2 para denegar\n")
+                                        choice = receptor.gets
+                                        case choice.to_i
+                                        when 1
+                                            ya = true
+                                            chat(
+                                                {
+                                                    "socket" => client, 
+                                                    "user" => usr["srv"]
+                                                },
+                                                {
+                                                    "socket" => @sockets[obtenerPos(@online, user)], 
+                                                    "user" => obtenerNom(@online, @online.index(user))
+                                                }, client, usr
+                                            )
+                                        when 2
+                                            client.puts("Lo sentimos, #{user} ha rechazado la invitación") # emisor.puts("Lo sentimos, #{usr["srv"]} ha rechazado la invitación")
+                                        else
+                                            client.puts("Opción incorrecta. Vuelva pronto") # emisor.puts("Opción incorrecta. Vuelva pronto")
+                                        end
+                                    # }
+                                    # c1.join
+                                    puts "terminado"
+                                    # ya = false
+                                else
+                                    client.puts("El usuario '#{user}' no está en línea")
+                                end
+                            else
+                                client.puts("No puedes chatear contigo mismo")
+                            end
+                        when "\\c"
+                            client.puts("Debes tener un chat abierto con otro cliente")
+                        when "\\q"
+                            print "#{usr["srv"]} se ha ido...\n"
+                            borrarEnLinea(usr["token"])
+                            usuariosEnLineaN = usuariosEnLinea().length
+                            client.puts("Bye")
+                            # evaluarOnline()
+                            # client.puts("tokenizador8080:#{1}")
+                            
+                            # @server.close
+                        else
+                            client.puts("Comando desconocido")
+                    end
+                end
+            }
+            @escucha.join
+        }
     end
 
     def conectar
@@ -98,90 +271,8 @@ class Server
                 @online.push(usr["srv"])
                 con += 1
                 print "Conexión establecida con #{usr["srv"]}...\n"
-                # client.puts("Conexión establecida - #{Time.now.ctime}\n")
-                # client.write("usrAct8080:#{getUsuarioEnLinea()["srv"]}")
-                request = "-"
-                while request != "\\q" and request = client.gets do # while true
-                    request = request.chop #client.recv(512).chomp
-                    case request
-                        when "\\h"
-                            client.puts(comandosDisponibles())
-                        when "\\u"
-                            # client.puts(usuariosEnLinea())
-                            users = usuariosEnLinea()
-                            if users.length == 0
-                                clien.puts("No hay usuarios en línea")
-                            else
-                                # client.puts("Los usuarios en línea son: \n")
-                                users.each do |onl|
-                                    client.puts("- #{onl["srv"]}\n")
-                                end
-                            end
-                        when "\\n"
-                            client.puts("#{getTiempoN()}")
-                        when "\\p"
-                            client.puts("Se mostrarán los mensajes pendientes")
-                        when /^\\n\s+[0-9]+$/ # /^\\n\s[0-9]+$/
-                            nuevoTiempo = request.split(/\s+/)[1] # request.split(" ")[1]
-                            File.open("./data/configtime.json", "w") do |f|
-                                f.puts(JSON.pretty_generate({"time" => nuevoTiempo.to_i}))
-                            end
-                            setTiempoN()
-                            client.puts("Tiempo de espera actualizado a #{nuevoTiempo} segundos")
-                        when /^\\c\s+([a-zA-Z_\.]+[0-9]*?)+$/
-                            user = request.split(/\s+/)[1]
-                            if user != usr["srv"]
-                                if isOnline(user)
-                                    receptor = @sockets[obtenerPos(@online, user)]
-                                    emisor = @sockets[obtenerPos(@online, usr["srv"])]
-                                    ya = true
-                                    c1 = Thread.new {
-                                        receptor.puts("Aceptas la invitación a chatear de #{usr["srv"]}?")
-                                    # receptor.puts("Presiona '\\c #{usr["srv"]}' para aceptar\nPresiona 2 para denegar")
-                                        receptor.puts("*Presiona 1 para aceptar\n*Presiona 2 para denegar\n")
-                                        # choice = "-"
-                                        # loop {break if choice = receptor.gets}
-                                        choice = receptor.gets
-                                        case choice.to_i
-                                        when 1
-                                            client.puts("<=== Chat con '#{user}' ===>\n")
-                                            loop {
-                                                Chat.new(
-                                                    {"client" => client, "user" => usr["srv"]}, 
-                                                    @sockets[obtenerPos(@online, user)],
-                                                    obtenerNom(@online, @online.index(user))
-                                                ).chatear
-                                            }
-                                        when 2
-                                            client.puts("Lo sentimos, #{usr["srv"]} ha rechazado la invitación") # emisor.puts("Lo sentimos, #{usr["srv"]} ha rechazado la invitación")
-                                        else
-                                            client.puts("Opción incorrecta. Vuelva pronto") # emisor.puts("Opción incorrecta. Vuelva pronto")
-                                        end
-                                    }
-                                    c1.join
-                                    puts "terminado"
-                                    ya = false
-                                else
-                                    client.puts("El usuario '#{user}' no está en línea")
-                                end
-                            else
-                                client.puts("No puedes chatear contigo mismo")
-                            end
-                        when "\\c"
-                            client.puts("Debes tener un chat abierto con otro cliente")
-                        when "\\q"
-                            print "#{usr["srv"]} se ha ido...\n"
-                            borrarEnLinea(usr["token"])
-                            usuariosEnLineaN = usuariosEnLinea().length
-                            client.puts("Bye")
-                            evaluarOnline()
-                            # client.puts("tokenizador8080:#{1}")
-                            
-                            # @server.close
-                        else
-                            client.puts("")
-                    end
-                end
+
+                escucharComandos(client, usr, 0)
             end # end.join
         }
         # end
