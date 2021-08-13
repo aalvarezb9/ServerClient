@@ -72,6 +72,7 @@ class Server
     end
 
     def chat(emisor, receptor, client, usr)
+        Thread.kill(@escucha)
         socketEmisor = emisor["socket"]
         userEmisor = emisor["user"]
         socketReceptor = receptor["socket"]
@@ -99,7 +100,7 @@ class Server
                 while msj = socketEmisor.gets do
                     if msj.chop == "\\c"
                         socketEmisor.puts("Ha finalizado el chat con #{userReceptor}...")
-                        socketEmisor.puts("Ha finalizado el chat con #{userReceptor}...")
+                        socketEmisor.puts("Ingrese comandos nuevamente")
                         socketReceptor.puts("#{userEmisor} ha salido del chat...")
                         break
                     else
@@ -116,6 +117,7 @@ class Server
                 while msj1 = socketReceptor.gets do
                     if msj1.chop == "\\c"
                         socketEmisor.puts("#{userReceptor} ha salido del chat")
+                        socketEmisor.puts("Ingrese comandos nuevamente")
                         break
                     else
                         socketEmisor.puts("#{userReceptor}: #{msj1.chop}")
@@ -137,7 +139,7 @@ class Server
         Thread.kill(@escucha2)
         @escucha2.join
         puts "fin 139"
-        escucharComandos(client, usr, 1) 
+        escucharComandos(client, usr, 1, false, "-") 
         puts "fin 141"
         
     end
@@ -155,22 +157,41 @@ class Server
         "
     end
 
-    def escucharComandos(client, usr, var)
+    def escucharComandos(client, usr, var, ya, request)
         # Thread.kill(@escucha1)
         # Thread.kill(@escucha2)
         if var == 1
             Thread.kill(@escucha1)
             Thread.kill(@escucha2)
         end
-        @request = "-"
-        ya = false
+        @request = request
+        # ya = false
         loop {
-            if ya
+
+            if ya == true
+                @escucha.join
                 Thread.kill(@escucha)
+                chat(
+                    {
+                        "socket" => client, 
+                        "user" => usr["srv"]
+                    },
+                    {
+                        "socket" => @sockets[obtenerPos(@online, user)], 
+                        "user" => obtenerNom(@online, @online.index(user))
+                    }, client, usr
+                )
+            end
+            if @request == "\\q"
+                Thread.kill(@con)
+                break
             end
             @escucha = Thread.new {
-                while @request != "\\q" and @request = client.gets do # while true # @request != "\\q" and @request = client.gets
+                #while @request != "\\q" and @request = client.gets do # while true # @request != "\\q" and @request = client.gets
+
+                    @request = client.gets
                     @request = @request.chop #client.recv(512).chomp
+
                     case @request
                         when "\\h"
                             client.puts(comandosDisponibles())
@@ -249,30 +270,39 @@ class Server
                             
                             # @server.close
                         else
-                            client.puts("Comando desconocido")
+                            begin
+                                client.puts("Comando desconocido")
+                            rescue
+                                puts ""
+                            end
                     end
-                end
+                    
+                #end ## FIN DEL WHILE
             }
             @escucha.join
+            escucharComandos(client, usr, 0, ya, @request)
         }
+        conectar()
     end
 
     def conectar
-        print "Esperando conexión...\n"
+        if usuariosEnLinea().length == 0
+            print "Esperando conexión...\n"
+        end
         ya = false
 
         con = 0
         usuariosEnLineaN = usuariosEnLinea.length()
         loop {
         # while con == 1           
-            Thread.start(@server.accept) do |client|
+        @con = Thread.start(@server.accept) do |client|
                 @sockets.push(client)
                 usr = getUsuarioEnLinea()
                 @online.push(usr["srv"])
                 con += 1
                 print "Conexión establecida con #{usr["srv"]}...\n"
 
-                escucharComandos(client, usr, 0)
+                escucharComandos(client, usr, 0, false, "-")
             end # end.join
         }
         # end
